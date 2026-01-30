@@ -119,6 +119,18 @@ const normalizeScores = (items) => {
   }));
 };
 
+const isSummaryRequest = (message) => {
+  const text = (message || "").toLowerCase();
+  return (
+    text.includes("summarize") ||
+    text.includes("summary") ||
+    text.includes("summarise") ||
+    text.includes("overview") ||
+    text.includes("tl;dr") ||
+    text.includes("tldr")
+  );
+};
+
 const mergeHybrid = (vectorItems, bm25Items) => {
   const merged = new Map();
   const addItem = (item, type) => {
@@ -186,11 +198,13 @@ const runRagQuery = async ({ userId, chatId, message }) => {
     const history = await listRecentMessages(chatId, 10);
     const selectedDocumentIds = await listChatDocumentIds(chatId);
     const queryEmbedding = await aiService.createEmbedding(message);
+    const isSummary = isSummaryRequest(message);
+    const vectorLimit = isSummary ? Math.max(hybridTopK, 16) : hybridTopK;
     const vectorItems = await vectorStore.listRelevantChunksWithScores(
       userId,
       chat.rag_type,
       queryEmbedding,
-      hybridTopK,
+      vectorLimit,
       selectedDocumentIds
     );
     let bm25Items = [];
@@ -199,7 +213,7 @@ const runRagQuery = async ({ userId, chatId, message }) => {
         userId,
         chat.rag_type,
         message,
-        hybridTopK,
+        vectorLimit,
         selectedDocumentIds
       );
     } catch (err) {
@@ -215,7 +229,8 @@ const runRagQuery = async ({ userId, chatId, message }) => {
       ranked = await reranker.rerank(message, ranked);
     }
 
-    let contexts = ranked.slice(0, 6);
+    const contextLimit = isSummary ? 14 : 6;
+    let contexts = ranked.slice(0, contextLimit);
     if (contexts.length === 0 && !vectorStore.usePinecone()) {
       const fallback = await vectorStore.listLatestDocumentChunks(
         userId,

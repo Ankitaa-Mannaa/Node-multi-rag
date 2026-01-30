@@ -82,7 +82,7 @@ const processDocument = async ({ documentId, ragType }) => {
     const chunkTexts = chunkText(text, {
       chunkSize: 900,
       overlap: 200,
-      maxChunks: 40,
+      maxChunks: 120,
     });
     console.log(`[jobs] chunking ${documentId}: ${chunkTexts.length} chunks`);
 
