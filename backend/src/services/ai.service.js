@@ -1,4 +1,6 @@
 const OpenAI = require("openai");
+const crypto = require("crypto");
+const pool = require("../config/db");
 const ApiError = require("../utils/ApiError");
 const { getPromptForRag } = require("../prompts");
 const {
@@ -31,6 +33,32 @@ const getOpenRouter = () => {
     });
   }
   return openrouterClient;
+};
+
+const parseAffordableTokens = (err) => {
+  const msg = err?.message || "";
+  const match = msg.match(/can only afford\s+(\d+)/i);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+};
+
+const createResponseWithBudget = async (client, payload, maxTokens) => {
+  try {
+    return await client.responses.create({
+      ...payload,
+      max_output_tokens: maxTokens,
+    });
+  } catch (err) {
+    const affordable = parseAffordableTokens(err);
+    if (affordable && affordable > 0 && affordable < maxTokens) {
+      return await client.responses.create({
+        ...payload,
+        max_output_tokens: affordable,
+      });
+    }
+    throw err;
+  }
 };
 
 const getModelForRag = (ragType) => {
@@ -240,14 +268,17 @@ const generateResponse = async ({
   });
 
   const client = getOpenRouter();
-  const res = await client.responses.create({
-    model,
-    max_output_tokens: openrouterMaxOutputTokens,
-    input: [
-      { role: "system", content: system },
-      { role: "user", content: userContent },
-    ],
-  });
+  const res = await createResponseWithBudget(
+    client,
+    {
+      model,
+      input: [
+        { role: "system", content: system },
+        { role: "user", content: userContent },
+      ],
+    },
+    openrouterMaxOutputTokens
+  );
   return res.output_text || "";
 };
 
@@ -259,14 +290,17 @@ const generateResponseFromPrompt = async ({ prompt, ragType }) => {
   const { system } = getPromptForRag(ragType || "general");
   const model = getModelForRag(ragType || "general");
   const client = getOpenRouter();
-  const res = await client.responses.create({
-    model,
-    max_output_tokens: openrouterMaxOutputTokens,
-    input: [
-      { role: "system", content: system },
-      { role: "user", content: prompt },
-    ],
-  });
+  const res = await createResponseWithBudget(
+    client,
+    {
+      model,
+      input: [
+        { role: "system", content: system },
+        { role: "user", content: prompt },
+      ],
+    },
+    openrouterMaxOutputTokens
+  );
   return res.output_text || "";
 };
 
@@ -275,6 +309,28 @@ const createEmbedding = async (text) => {
   const supportsDimensions = /(^|\/)text-embedding-3-(small|large)$/.test(
     openrouterEmbeddingModel
   );
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${openrouterEmbeddingModel}:${embeddingDim || ""}:${text}`)
+    .digest("hex");
+
+  try {
+    const cached = await pool.query(
+      `
+      SELECT embedding
+      FROM embedding_cache
+      WHERE text_hash = $1 AND model = $2 AND dimensions = $3
+      LIMIT 1
+      `,
+      [hash, openrouterEmbeddingModel, embeddingDim || 0]
+    );
+    if (cached.rows[0]?.embedding?.length) {
+      return cached.rows[0].embedding;
+    }
+  } catch (err) {
+    // cache miss or table not available; continue
+  }
+
   const payload = {
     model: openrouterEmbeddingModel,
     input: text,
@@ -289,6 +345,18 @@ const createEmbedding = async (text) => {
       `Embedding dimension mismatch: got ${vector.length}, expected ${embeddingDim}. Check EMBEDDING_DIM and your embedding model (or set dimensions for text-embedding-3-*).`,
       500
     );
+  }
+  try {
+    await pool.query(
+      `
+      INSERT INTO embedding_cache (text_hash, model, dimensions, embedding)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (text_hash, model, dimensions) DO NOTHING
+      `,
+      [hash, openrouterEmbeddingModel, embeddingDim || 0, vector]
+    );
+  } catch (err) {
+    // ignore cache write failures
   }
   return vector;
 };

@@ -30,6 +30,7 @@ export const RAGPage: React.FC<RAGPageProps> = ({
   const [messages, setMessages] = useState<Message[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [confirmState, setConfirmState] = useState<{
@@ -110,8 +111,13 @@ export const RAGPage: React.FC<RAGPageProps> = ({
   useEffect(() => {
     if (selectedChatId) {
       loadMessages(selectedChatId);
+      chatsApi
+        .getDocuments(selectedChatId)
+        .then((res) => setSelectedDocIds(new Set(res.document_ids)))
+        .catch(() => setSelectedDocIds(new Set()));
     } else {
       setMessages([]);
+      setSelectedDocIds(new Set());
     }
   }, [selectedChatId, loadMessages]);
 
@@ -170,6 +176,29 @@ export const RAGPage: React.FC<RAGPageProps> = ({
   const handleRenameChat = (chat: Chat) => {
     setRenameState(chat);
     setRenameValue(chat.title || "");
+  };
+
+  const handleToggleDocument = async (documentId: string) => {
+    if (!selectedChatId) return;
+    const next = new Set(selectedDocIds);
+    if (next.has(documentId)) {
+      next.delete(documentId);
+    } else {
+      next.add(documentId);
+    }
+    setSelectedDocIds(next);
+    try {
+      await chatsApi.setDocuments(selectedChatId, Array.from(next));
+    } catch (error) {
+      console.error("Failed to update chat documents:", error);
+      // reload from server on failure
+      try {
+        const res = await chatsApi.getDocuments(selectedChatId);
+        setSelectedDocIds(new Set(res.document_ids));
+      } catch (_) {
+        setSelectedDocIds(new Set());
+      }
+    }
   };
 
   const handleSelectChat = (chatId: string) => {
@@ -394,7 +423,15 @@ export const RAGPage: React.FC<RAGPageProps> = ({
               <DocumentList
                 documents={documents}
                 onDelete={handleDeleteDocument}
+                selectable={Boolean(selectedChatId)}
+                selectedIds={selectedDocIds}
+                onToggleSelect={handleToggleDocument}
               />
+              {selectedChatId && (
+                <p className="mt-2 text-xs text-gray-600">
+                  Selected documents are used for this chat. Leave all unchecked to use all documents.
+                </p>
+              )}
             </div>
           </div>
         </div>

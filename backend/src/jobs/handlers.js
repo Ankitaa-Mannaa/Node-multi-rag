@@ -95,6 +95,23 @@ const processDocument = async ({ documentId, ragType }) => {
         chunkIndex: i,
       });
     }
+
+    await pool.query("DELETE FROM document_chunks_text WHERE document_id = $1", [
+      doc.id,
+    ]);
+    for (let i = 0; i < chunkTexts.length; i++) {
+      await pool.query(
+        `
+        INSERT INTO document_chunks_text (document_id, user_id, rag_type, chunk_index, content, content_tsv)
+        VALUES ($1, $2, $3, $4, $5, to_tsvector('english', $5))
+        ON CONFLICT (document_id, chunk_index) DO UPDATE
+        SET content = EXCLUDED.content,
+            content_tsv = EXCLUDED.content_tsv
+        `,
+        [doc.id, doc.user_id, doc.rag_type, i, chunkTexts[i]]
+      );
+    }
+
     await vectorStore.upsertChunks(
       doc.id,
       doc.user_id,

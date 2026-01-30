@@ -30,6 +30,14 @@ module.exports = {
   embeddingDim: Number(process.env.EMBEDDING_DIM) || 1024,
   maxMessagesPerRag: Number(process.env.MAX_MESSAGES_PER_RAG) || 20,
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS) || 30,
+  // RAG retrieval tuning
+  hybridAlpha: Number(process.env.HYBRID_ALPHA) || 0.7,
+  hybridTopK: Number(process.env.HYBRID_TOP_K) || 8,
+  rerankerProvider: process.env.RERANKER_PROVIDER || "none",
+  rerankerApiKey: process.env.RERANKER_API_KEY,
+  rerankerModel: process.env.RERANKER_MODEL,
+  rerankerBaseUrl: process.env.RERANKER_BASE_URL,
+  rerankerTopK: Number(process.env.RERANKER_TOP_K) || 6,
   // Pinecone (optional; if set, used for vector store instead of pgvector)
   pineconeApiKey: process.env.PINECONE_API_KEY,
   pineconeIndex: process.env.PINECONE_INDEX || "multi-rag",

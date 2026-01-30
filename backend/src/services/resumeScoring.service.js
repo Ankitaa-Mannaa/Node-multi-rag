@@ -79,7 +79,7 @@ const detectScoreChoice = (message, history) => {
   return null;
 };
 
-async function computeGenericScore({ userId, ragType }) {
+async function computeGenericScore({ userId, ragType, documentIds }) {
   const criteria = [];
   let weightedSum = 0;
   let weightTotal = 0;
@@ -90,7 +90,8 @@ async function computeGenericScore({ userId, ragType }) {
       userId,
       ragType,
       embedding,
-      5
+      5,
+      documentIds || []
     );
     const topScore = matches?.[0]?.score ?? 0;
     const normalized = clamp01(topScore);
@@ -115,7 +116,7 @@ async function computeGenericScore({ userId, ragType }) {
   };
 }
 
-async function computeResumeScore({ userId, ragType, message, history }) {
+async function computeResumeScore({ userId, ragType, message, history, documentIds }) {
   if (ragType !== "resume") return null;
   if (!isScoringRequest(message)) return null;
 
@@ -129,7 +130,8 @@ async function computeResumeScore({ userId, ragType, message, history }) {
       userId,
       ragType,
       embedding,
-      10
+      10,
+      documentIds || []
     );
 
     if (!matches || matches.length === 0) {
@@ -163,7 +165,7 @@ async function computeResumeScore({ userId, ragType, message, history }) {
   }
 
   if (choice === "generic") {
-    return computeGenericScore({ userId, ragType });
+    return computeGenericScore({ userId, ragType, documentIds });
   }
 
   if (choice === "job") {

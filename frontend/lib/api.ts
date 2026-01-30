@@ -118,6 +118,19 @@ export const chatsApi = {
     });
     return response.data;
   },
+  getDocuments: async (chatId: string): Promise<{ document_ids: string[] }> => {
+    const response = await api.get<{ document_ids: string[] }>(`/chats/${chatId}/documents`);
+    return response.data;
+  },
+  setDocuments: async (
+    chatId: string,
+    documentIds: string[]
+  ): Promise<{ document_ids: string[] }> => {
+    const response = await api.put<{ document_ids: string[] }>(`/chats/${chatId}/documents`, {
+      document_ids: documentIds,
+    });
+    return response.data;
+  },
   delete: async (chatId: string): Promise<void> => {
     await api.delete(`/chats/${chatId}`);
   },

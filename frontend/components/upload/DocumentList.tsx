@@ -9,11 +9,17 @@ import { cn } from "@/lib/utils";
 interface DocumentListProps {
   documents: Document[];
   onDelete?: (documentId: string) => void;
+  selectable?: boolean;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (documentId: string) => void;
 }
 
 export const DocumentList: React.FC<DocumentListProps> = ({
   documents,
   onDelete,
+  selectable = false,
+  selectedIds,
+  onToggleSelect,
 }) => {
   const getStatusIcon = (status: Document["status"]) => {
     switch (status) {
@@ -64,6 +70,27 @@ export const DocumentList: React.FC<DocumentListProps> = ({
             className="flex items-start justify-between gap-3 p-3 bg-cream-50 rounded-lg border border-cream-300"
           >
             <div className="flex items-start gap-3 flex-1 min-w-0">
+              {selectable && (
+                <button
+                  type="button"
+                  onClick={() => onToggleSelect?.(doc.id)}
+                  className={cn(
+                    "mt-0.5 h-5 w-5 rounded border flex items-center justify-center text-xs",
+                    selectedIds?.has(doc.id)
+                      ? "bg-black border-black text-white"
+                      : "bg-white border-cream-300 text-transparent",
+                    doc.status !== "ready" && "opacity-40 cursor-not-allowed"
+                  )}
+                  disabled={doc.status !== "ready"}
+                  aria-label={
+                    selectedIds?.has(doc.id)
+                      ? "Deselect document for this chat"
+                      : "Select document for this chat"
+                  }
+                >
+                  ✓
+                </button>
+              )}
               {getStatusIcon(doc.status)}
               <div className="flex-1 min-w-0 w-full">
                 <p className="text-sm font-medium text-gray-900 break-all whitespace-normal">

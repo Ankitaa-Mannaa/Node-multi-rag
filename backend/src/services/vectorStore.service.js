@@ -41,14 +41,19 @@ function namespace(userId, ragType) {
  * @param {number} limit - max chunks to return
  * @returns {Promise<Array<{ content: string, documentId?: string, fileName?: string, chunkIndex?: number }>>}
  */
-async function listRelevantChunks(userId, ragType, embedding, limit = 6) {
+async function listRelevantChunks(userId, ragType, embedding, limit = 6, documentIds = []) {
   const idx = await getPineconeIndex();
   if (idx) {
     const ns = namespace(userId, ragType);
+    const filter =
+      Array.isArray(documentIds) && documentIds.length > 0
+        ? { document_id: { $in: documentIds } }
+        : undefined;
     const res = await idx.namespace(ns).query({
       vector: embedding,
       topK: limit,
       includeMetadata: true,
+      ...(filter ? { filter } : {}),
     });
     const matches = res.matches || [];
     const items = matches
@@ -79,16 +84,24 @@ async function listRelevantChunks(userId, ragType, embedding, limit = 6) {
     return items;
   }
 
-  const res = await pool.query(
-    `
+  const params = [userId, ragType, toPgVector(embedding), limit];
+  let sql = `
     SELECT c.content, c.chunk_index, d.id AS document_id, d.file_name
     FROM document_chunks c
     JOIN documents d ON d.id = c.document_id
     WHERE c.user_id = $1 AND c.rag_type = $2 AND d.status = 'ready'
-    ORDER BY c.embedding <-> $3
-    LIMIT $4
+  `;
+  if (Array.isArray(documentIds) && documentIds.length > 0) {
+    params.push(documentIds);
+    sql += ` AND c.document_id = ANY($${params.length}::uuid[])`;
+  }
+  sql += ` ORDER BY c.embedding <-> $3 LIMIT $4`;
+
+  const res = await pool.query(
+    `
+    ${sql}
     `,
-    [userId, ragType, toPgVector(embedding), limit]
+    params
   );
   return res.rows.map((row) => ({
     content: row.content,
@@ -106,14 +119,19 @@ async function listRelevantChunks(userId, ragType, embedding, limit = 6) {
  * @param {number} limit - max chunks to return
  * @returns {Promise<Array<{ content: string, score: number, documentId?: string, fileName?: string, chunkIndex?: number }>>}
  */
-async function listRelevantChunksWithScores(userId, ragType, embedding, limit = 6) {
+async function listRelevantChunksWithScores(userId, ragType, embedding, limit = 6, documentIds = []) {
   const idx = await getPineconeIndex();
   if (idx) {
     const ns = namespace(userId, ragType);
+    const filter =
+      Array.isArray(documentIds) && documentIds.length > 0
+        ? { document_id: { $in: documentIds } }
+        : undefined;
     const res = await idx.namespace(ns).query({
       vector: embedding,
       topK: limit,
       includeMetadata: true,
+      ...(filter ? { filter } : {}),
     });
     const matches = res.matches || [];
     const items = matches
@@ -145,8 +163,8 @@ async function listRelevantChunksWithScores(userId, ragType, embedding, limit = 
     return items;
   }
 
-  const res = await pool.query(
-    `
+  const params = [userId, ragType, toPgVector(embedding), limit];
+  let sql = `
     SELECT c.content,
            c.chunk_index,
            d.id AS document_id,
@@ -155,10 +173,18 @@ async function listRelevantChunksWithScores(userId, ragType, embedding, limit = 
     FROM document_chunks c
     JOIN documents d ON d.id = c.document_id
     WHERE c.user_id = $1 AND c.rag_type = $2 AND d.status = 'ready'
-    ORDER BY c.embedding <-> $3
-    LIMIT $4
+  `;
+  if (Array.isArray(documentIds) && documentIds.length > 0) {
+    params.push(documentIds);
+    sql += ` AND c.document_id = ANY($${params.length}::uuid[])`;
+  }
+  sql += ` ORDER BY c.embedding <-> $3 LIMIT $4`;
+
+  const res = await pool.query(
+    `
+    ${sql}
     `,
-    [userId, ragType, toPgVector(embedding), limit]
+    params
   );
   return res.rows.map((row) => ({
     content: row.content,
@@ -173,17 +199,19 @@ async function listRelevantChunksWithScores(userId, ragType, embedding, limit = 
  * Fallback: return the earliest chunks for the most recent ready document.
  * Useful for broad "summarize the document" queries when similarity yields nothing.
  */
-async function listLatestDocumentChunks(userId, ragType, limit = 6) {
-  const docRes = await pool.query(
-    `
+async function listLatestDocumentChunks(userId, ragType, limit = 6, documentIds = []) {
+  const params = [userId, ragType];
+  let sql = `
     SELECT id, file_name
     FROM documents
     WHERE user_id = $1 AND rag_type = $2 AND status = 'ready'
-    ORDER BY created_at DESC
-    LIMIT 1
-    `,
-    [userId, ragType]
-  );
+  `;
+  if (Array.isArray(documentIds) && documentIds.length > 0) {
+    params.push(documentIds);
+    sql += ` AND id = ANY($${params.length}::uuid[])`;
+  }
+  sql += ` ORDER BY created_at DESC LIMIT 1`;
+  const docRes = await pool.query(sql, params);
   const doc = docRes.rows[0];
   if (!doc) return [];
 

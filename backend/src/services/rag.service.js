@@ -4,6 +4,9 @@ const aiService = require("./ai.service");
 const vectorStore = require("./vectorStore.service");
 const resumeScoring = require("./resumeScoring.service");
 const financeService = require("./finance.service");
+const textSearch = require("./textSearch.service");
+const reranker = require("./reranker.service");
+const { hybridAlpha, hybridTopK } = require("../config/env");
 
 const { maxMessagesPerRag } = require("../config/env");
 
@@ -63,10 +66,6 @@ const listRecentMessages = async (chatId, limit = 10) => {
   return res.rows.reverse();
 };
 
-const listRelevantChunks = (userId, ragType, embedding, limit = 6) => {
-  return vectorStore.listRelevantChunks(userId, ragType, embedding, limit);
-};
-
 const listDocumentsForRag = async (userId, ragType, limit = 10) => {
   const res = await pool.query(
     `
@@ -79,6 +78,72 @@ const listDocumentsForRag = async (userId, ragType, limit = 10) => {
     [userId, ragType, limit]
   );
   return res.rows;
+};
+
+const listDocumentsForRagFiltered = async (userId, ragType, documentIds = [], limit = 10) => {
+  if (!documentIds.length) {
+    return listDocumentsForRag(userId, ragType, limit);
+  }
+  const res = await pool.query(
+    `
+    SELECT id, file_name, status, created_at
+    FROM documents
+    WHERE user_id = $1 AND rag_type = $2 AND status = 'ready'
+      AND id = ANY($3::uuid[])
+    ORDER BY created_at DESC
+    LIMIT $4
+    `,
+    [userId, ragType, documentIds, limit]
+  );
+  return res.rows;
+};
+
+const listChatDocumentIds = async (chatId) => {
+  try {
+    const res = await pool.query(
+      "SELECT document_id FROM chat_documents WHERE chat_id = $1",
+      [chatId]
+    );
+    return res.rows.map((r) => r.document_id);
+  } catch (err) {
+    return [];
+  }
+};
+
+const normalizeScores = (items) => {
+  if (!items.length) return items;
+  const max = Math.max(...items.map((i) => i.score || 0));
+  return items.map((i) => ({
+    ...i,
+    score: max > 0 ? (i.score || 0) / max : 0,
+  }));
+};
+
+const mergeHybrid = (vectorItems, bm25Items) => {
+  const merged = new Map();
+  const addItem = (item, type) => {
+    const key = item.documentId && item.chunkIndex !== undefined
+      ? `${item.documentId}:${item.chunkIndex}`
+      : item.content.slice(0, 80);
+    if (!merged.has(key)) {
+      merged.set(key, {
+        ...item,
+        vectorScore: 0,
+        bm25Score: 0,
+      });
+    }
+    const existing = merged.get(key);
+    if (type === "vector") existing.vectorScore = item.score || 0;
+    if (type === "bm25") existing.bm25Score = item.score || 0;
+  };
+
+  vectorItems.forEach((i) => addItem(i, "vector"));
+  bm25Items.forEach((i) => addItem(i, "bm25"));
+
+  return Array.from(merged.values()).map((i) => ({
+    ...i,
+    hybridScore: hybridAlpha * i.vectorScore + (1 - hybridAlpha) * i.bm25Score,
+  }));
 };
 
 const runRagQuery = async ({ userId, chatId, message }) => {
@@ -119,29 +184,62 @@ const runRagQuery = async ({ userId, chatId, message }) => {
     );
 
     const history = await listRecentMessages(chatId, 10);
+    const selectedDocumentIds = await listChatDocumentIds(chatId);
     const queryEmbedding = await aiService.createEmbedding(message);
-    let contexts = await listRelevantChunks(
+    const vectorItems = await vectorStore.listRelevantChunksWithScores(
       userId,
       chat.rag_type,
       queryEmbedding,
-      6
+      hybridTopK,
+      selectedDocumentIds
     );
+    let bm25Items = [];
+    try {
+      bm25Items = await textSearch.searchChunksBM25(
+        userId,
+        chat.rag_type,
+        message,
+        hybridTopK,
+        selectedDocumentIds
+      );
+    } catch (err) {
+      bm25Items = [];
+    }
+    const merged = mergeHybrid(
+      normalizeScores(vectorItems),
+      normalizeScores(bm25Items)
+    );
+
+    let ranked = merged.sort((a, b) => b.hybridScore - a.hybridScore);
+    if (ranked.length > 0) {
+      ranked = await reranker.rerank(message, ranked);
+    }
+
+    let contexts = ranked.slice(0, 6);
     if (contexts.length === 0 && !vectorStore.usePinecone()) {
       const fallback = await vectorStore.listLatestDocumentChunks(
         userId,
         chat.rag_type,
-        8
+        8,
+        selectedDocumentIds
       );
       if (fallback.length > 0) {
         contexts = fallback;
       }
     }
-    const documents = await listDocumentsForRag(userId, chat.rag_type, 10);
+
+    const documents = await listDocumentsForRagFiltered(
+      userId,
+      chat.rag_type,
+      selectedDocumentIds,
+      10
+    );
     const resumeScore = await resumeScoring.computeResumeScore({
       userId,
       ragType: chat.rag_type,
       message,
       history,
+      documentIds: selectedDocumentIds,
     });
     const financeData =
       chat.rag_type === "expense"

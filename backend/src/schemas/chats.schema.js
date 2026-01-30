@@ -30,9 +30,26 @@ const updateChatSchema = z.object({
   }),
 });
 
+const chatDocumentsSchema = z.object({
+  params: z.object({
+    id: z.string().uuid(),
+  }),
+});
+
+const setChatDocumentsSchema = z.object({
+  params: z.object({
+    id: z.string().uuid(),
+  }),
+  body: z.object({
+    document_ids: z.array(z.string().uuid()).default([]),
+  }),
+});
+
 module.exports = {
   createChatSchema,
   listChatsSchema,
   deleteChatSchema,
   updateChatSchema,
+  chatDocumentsSchema,
+  setChatDocumentsSchema,
 };
