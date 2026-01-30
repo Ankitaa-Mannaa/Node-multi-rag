@@ -38,7 +38,7 @@ module.exports = {
   rerankerModel: process.env.RERANKER_MODEL,
   rerankerBaseUrl: process.env.RERANKER_BASE_URL,
   rerankerTopK: Number(process.env.RERANKER_TOP_K) || 6,
-  // Pinecone (optional; if set, used for vector store instead of pgvector)
+  // Pinecone (required for vector search; no local fallback)
   pineconeApiKey: process.env.PINECONE_API_KEY,
   pineconeIndex: process.env.PINECONE_INDEX || "multi-rag",
   // Finance data providers (optional)
