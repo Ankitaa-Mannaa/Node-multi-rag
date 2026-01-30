@@ -6,7 +6,10 @@ module.exports = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || "development",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
+  frontendUrls: (process.env.FRONTEND_URLS || process.env.FRONTEND_URL || "http://localhost:3000")
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean),
   rateLimitWindowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
   rateLimitMax: Number(process.env.RATE_LIMIT_MAX) || 120,
   openrouterApiKey: process.env.OPENROUTER_API_KEY,
