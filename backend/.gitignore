@@ -1,0 +1,10 @@
+.env
+
+package.json
+package-lock.json
+
+/uploads
+
+/node_modules
+
+jest.config.js
