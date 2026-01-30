@@ -33,6 +33,7 @@ export const RAGPage: React.FC<RAGPageProps> = ({
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isAwaitingResponse, setIsAwaitingResponse] = useState(false);
   const [confirmState, setConfirmState] = useState<{
     kind: "chat" | "document";
     id: string;
@@ -119,6 +120,7 @@ export const RAGPage: React.FC<RAGPageProps> = ({
       setMessages([]);
       setSelectedDocIds(new Set());
     }
+    setIsAwaitingResponse(false);
   }, [selectedChatId, loadMessages]);
 
   const handleCreateChat = async () => {
@@ -214,6 +216,7 @@ export const RAGPage: React.FC<RAGPageProps> = ({
 
     try {
       setIsSending(true);
+      setIsAwaitingResponse(true);
 
       // Add user message to UI immediately
       const userMessage: Message = {
@@ -240,12 +243,14 @@ export const RAGPage: React.FC<RAGPageProps> = ({
         };
         setMessages((prev) => sortMessages([...prev, aiMessage]));
       }
+      setIsAwaitingResponse(false);
 
       // Reload messages and usage
       await loadMessages(selectedChatId);
       await loadUsage();
     } catch (error: any) {
       console.error("Failed to send message:", error);
+      setIsAwaitingResponse(false);
       // Remove the user message on error
       if (userMessageId) {
         setMessages((prev) => prev.filter((m) => m.id !== userMessageId));
@@ -378,7 +383,7 @@ export const RAGPage: React.FC<RAGPageProps> = ({
           <div className="flex-1 flex flex-col" style={{ backgroundColor: '#f5f3f0' }}>
             {selectedChatId ? (
               <>
-                <ChatWindow messages={messages} isLoading={isSending} />
+                <ChatWindow messages={messages} isLoading={isAwaitingResponse} />
                 <ChatInput
                   onSend={handleSendMessage}
                   disabled={!canSendMessage}
