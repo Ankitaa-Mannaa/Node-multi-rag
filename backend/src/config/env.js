@@ -27,6 +27,7 @@ module.exports = {
   openrouterEmbeddingModel:
     process.env.OPENROUTER_EMBEDDING_MODEL || "text-embedding-3-large",
   openrouterMaxOutputTokens: Number(process.env.OPENROUTER_MAX_OUTPUT_TOKENS) || 2048,
+  openrouterMaxPromptChars: Number(process.env.OPENROUTER_MAX_PROMPT_CHARS) || 12000,
   embeddingDim: Number(process.env.EMBEDDING_DIM) || 1024,
   maxMessagesPerRag: Number(process.env.MAX_MESSAGES_PER_RAG) || 20,
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS) || 30,

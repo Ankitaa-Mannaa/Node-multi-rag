@@ -13,6 +13,7 @@ const {
   openrouterModelExpense,
   openrouterEmbeddingModel,
   openrouterMaxOutputTokens,
+  openrouterMaxPromptChars,
   embeddingDim,
 } = require("../config/env");
 
@@ -151,6 +152,34 @@ function formatFinanceData(financeData) {
   return lines.join("\n");
 }
 
+const trimText = (text, maxChars) => {
+  if (!text || maxChars <= 0) return "";
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, Math.max(0, maxChars - 15))}\n...[truncated]`;
+};
+
+const trimContexts = (contexts, maxChars) => {
+  if (!Array.isArray(contexts) || contexts.length === 0) return "";
+  if (typeof contexts[0] === "string") {
+    return trimText(contexts.join("\n\n---\n\n"), maxChars);
+  }
+  let remaining = maxChars;
+  const parts = [];
+  for (const ctx of contexts) {
+    const header = ctx.fileName
+      ? `### ${ctx.fileName} (id: ${ctx.documentId || "unknown"})\n`
+      : `### Document ${ctx.documentId || "unknown"}\n`;
+    const chunkLine =
+      (typeof ctx.chunkIndex === "number" ? `- [chunk ${ctx.chunkIndex}] ` : "- ") +
+      (ctx.content || "");
+    const block = `${header}${chunkLine}`;
+    if (block.length > remaining) break;
+    parts.push(block);
+    remaining -= block.length + 1;
+  }
+  return trimText(parts.join("\n"), maxChars);
+};
+
 function formatContexts(contexts) {
   if (!Array.isArray(contexts) || contexts.length === 0) {
     return "No relevant document context was found for this query.";
@@ -194,8 +223,7 @@ function buildUserPrompt({
   financeData,
 }) {
   const { userPrefix } = getPromptForRag(ragType);
-  const contextText = formatContexts(contexts);
-  const historyText =
+  const historyTextRaw =
     history.length > 0
       ? history.map((m) => `${m.role}: ${m.content}`).join("\n")
       : "No previous messages in this chat.";
@@ -222,6 +250,27 @@ function buildUserPrompt({
     parts.push(financeText);
     parts.push("");
   }
+
+  const base = parts.join("\n");
+  const fixedTail = [
+    "## Context (from uploaded documents)",
+    "",
+    "## Conversation history",
+    "",
+    "## User message",
+    message || "",
+  ].join("\n");
+
+  const totalBudget = openrouterMaxPromptChars || 12000;
+  const used = base.length + fixedTail.length;
+  const available = Math.max(0, totalBudget - used);
+  const contextBudget = Math.floor(available * 0.7);
+  const historyBudget = available - contextBudget;
+
+  const contextText =
+    trimContexts(contexts, contextBudget || 0) ||
+    "No relevant document context was found for this query.";
+  const historyText = trimText(historyTextRaw, historyBudget || 0);
 
   parts.push(
     "## Context (from uploaded documents)",
