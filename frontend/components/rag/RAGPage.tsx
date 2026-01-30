@@ -420,6 +420,11 @@ export const RAGPage: React.FC<RAGPageProps> = ({
 
             {/* Document List */}
             <div>
+              {selectedChatId && (
+                <p className="text-xs text-gray-600 mb-3">
+                  Selected documents are used for this chat. Leave all unchecked to use all documents.
+                </p>
+              )}
               <DocumentList
                 documents={documents}
                 onDelete={handleDeleteDocument}
@@ -427,11 +432,6 @@ export const RAGPage: React.FC<RAGPageProps> = ({
                 selectedIds={selectedDocIds}
                 onToggleSelect={handleToggleDocument}
               />
-              {selectedChatId && (
-                <p className="mt-2 text-xs text-gray-600">
-                  Selected documents are used for this chat. Leave all unchecked to use all documents.
-                </p>
-              )}
             </div>
           </div>
         </div>
