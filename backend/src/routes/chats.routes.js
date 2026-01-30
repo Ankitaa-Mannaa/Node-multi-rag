@@ -6,6 +6,7 @@ const {
   createChatSchema,
   listChatsSchema,
   deleteChatSchema,
+  updateChatSchema,
 } = require("../schemas/chats.schema");
 
 const router = express.Router();
@@ -13,5 +14,6 @@ const router = express.Router();
 router.post("/chats", auth, validate(createChatSchema), chatsController.createChat);
 router.get("/chats", auth, validate(listChatsSchema), chatsController.listChats);
 router.delete("/chats/:id", auth, validate(deleteChatSchema), chatsController.deleteChat);
+router.patch("/chats/:id", auth, validate(updateChatSchema), chatsController.updateChat);
 
 module.exports = router;

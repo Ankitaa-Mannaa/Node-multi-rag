@@ -2,8 +2,10 @@ const pool = require("../config/db");
 const ApiError = require("../utils/ApiError");
 const aiService = require("./ai.service");
 const vectorStore = require("./vectorStore.service");
+const resumeScoring = require("./resumeScoring.service");
+const financeService = require("./finance.service");
 
-const MAX_MESSAGES_PER_RAG = 20;
+const { maxMessagesPerRag } = require("../config/env");
 
 const getChatById = async (chatId, userId) => {
   const res = await pool.query(
@@ -65,6 +67,20 @@ const listRelevantChunks = (userId, ragType, embedding, limit = 6) => {
   return vectorStore.listRelevantChunks(userId, ragType, embedding, limit);
 };
 
+const listDocumentsForRag = async (userId, ragType, limit = 10) => {
+  const res = await pool.query(
+    `
+    SELECT id, file_name, status, created_at
+    FROM documents
+    WHERE user_id = $1 AND rag_type = $2 AND status = 'ready'
+    ORDER BY created_at DESC
+    LIMIT $3
+    `,
+    [userId, ragType, limit]
+  );
+  return res.rows;
+};
+
 const runRagQuery = async ({ userId, chatId, message }) => {
   const client = await pool.connect();
   try {
@@ -93,7 +109,7 @@ const runRagQuery = async ({ userId, chatId, message }) => {
       [userId, chat.rag_type]
     );
     const usage = usageRes.rows[0];
-    if (usage && usage.message_count >= MAX_MESSAGES_PER_RAG) {
+    if (usage && usage.message_count >= maxMessagesPerRag) {
       throw new ApiError("Limit reached", 403);
     }
 
@@ -110,7 +126,7 @@ const runRagQuery = async ({ userId, chatId, message }) => {
       queryEmbedding,
       6
     );
-    if (contexts.length === 0) {
+    if (contexts.length === 0 && !vectorStore.usePinecone()) {
       const fallback = await vectorStore.listLatestDocumentChunks(
         userId,
         chat.rag_type,
@@ -120,11 +136,25 @@ const runRagQuery = async ({ userId, chatId, message }) => {
         contexts = fallback;
       }
     }
+    const documents = await listDocumentsForRag(userId, chat.rag_type, 10);
+    const resumeScore = await resumeScoring.computeResumeScore({
+      userId,
+      ragType: chat.rag_type,
+      message,
+      history,
+    });
+    const financeData =
+      chat.rag_type === "expense"
+        ? await financeService.getFinanceData(message)
+        : null;
     const aiText = await aiService.generateResponse({
       ragType: chat.rag_type,
       message,
       history,
       contexts,
+      documents,
+      resumeScore,
+      financeData,
     });
 
     const aiMsg = await client.query(

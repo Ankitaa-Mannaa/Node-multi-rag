@@ -1,7 +1,6 @@
 const pool = require("../config/db");
 const ApiError = require("../utils/ApiError");
-
-const MAX_MESSAGES_PER_RAG = 20;
+const { maxMessagesPerRag } = require("../config/env");
 
 const getUsage = async (req, res, next) => {
   try {
@@ -38,15 +37,15 @@ const getUsage = async (req, res, next) => {
     const count = result.rows[0]?.message_count || 0;
     const updatedAt = result.rows[0]?.updated_at || null;
     const resetAt =
-      count >= MAX_MESSAGES_PER_RAG && updatedAt
+      count >= maxMessagesPerRag && updatedAt
         ? new Date(new Date(updatedAt).getTime() + 24 * 60 * 60 * 1000).toISOString()
         : null;
 
     return res.json({
       rag_type: ragType,
       message_count: count,
-      remaining: Math.max(0, MAX_MESSAGES_PER_RAG - count),
-      limit: MAX_MESSAGES_PER_RAG,
+      remaining: Math.max(0, maxMessagesPerRag - count),
+      limit: maxMessagesPerRag,
       reset_at: resetAt,
     });
   } catch (err) {

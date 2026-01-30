@@ -7,8 +7,13 @@ export default function ExpensePage() {
     <RAGPage
       ragType="expense"
       title="Expense RAG"
-      description="Track and analyze your expenses from CSV files"
-      acceptedFileTypes={["text/csv"]}
+      description="Track and analyze your expenses from PDF, CSV, or TXT files"
+      acceptedFileTypes={[
+        "application/pdf",
+        "text/csv",
+        "application/vnd.ms-excel",
+        "text/plain",
+      ]}
     />
   );
 }

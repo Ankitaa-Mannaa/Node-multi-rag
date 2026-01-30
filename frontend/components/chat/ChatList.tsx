@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Chat } from "@/types";
-import { FiMessageSquare, FiTrash2 } from "react-icons/fi";
+import { FiMessageSquare, FiTrash2, FiEdit2 } from "react-icons/fi";
 import { cn } from "@/lib/utils";
 
 interface ChatListProps {
@@ -11,6 +11,7 @@ interface ChatListProps {
   onSelectChat: (chatId: string) => void;
   onCreateNew: () => void;
   onDeleteChat?: (chatId: string) => void;
+  onRenameChat?: (chat: Chat) => void;
 }
 
 export const ChatList: React.FC<ChatListProps> = ({
@@ -19,6 +20,7 @@ export const ChatList: React.FC<ChatListProps> = ({
   onSelectChat,
   onCreateNew,
   onDeleteChat,
+  onRenameChat,
 }) => {
   const formatRagTitle = (ragType?: string) => {
     if (!ragType) return "New Chat";
@@ -64,23 +66,45 @@ export const ChatList: React.FC<ChatListProps> = ({
                       {new Date(chat.created_at).toLocaleDateString()}
                     </p>
                   </div>
-                  {onDeleteChat && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteChat(chat.id);
-                      }}
-                      className={cn(
-                        "p-1.5 rounded-md transition-colors",
-                        selectedChatId === chat.id
-                          ? "text-white/70 hover:text-white hover:bg-white/10"
-                          : "text-gray-500 hover:text-red-500 hover:bg-red-50"
+                  {(onDeleteChat || onRenameChat) && (
+                    <div className="flex items-center gap-1">
+                      {onRenameChat && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onRenameChat(chat);
+                          }}
+                          className={cn(
+                            "p-1.5 rounded-md transition-colors",
+                            selectedChatId === chat.id
+                              ? "text-white/70 hover:text-white hover:bg-white/10"
+                              : "text-gray-500 hover:text-gray-900 hover:bg-cream-200"
+                          )}
+                          aria-label="Rename chat"
+                        >
+                          <FiEdit2 className="w-4 h-4" />
+                        </button>
                       )}
-                      aria-label="Delete chat"
-                    >
-                      <FiTrash2 className="w-4 h-4" />
-                    </button>
+                      {onDeleteChat && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteChat(chat.id);
+                          }}
+                          className={cn(
+                            "p-1.5 rounded-md transition-colors",
+                            selectedChatId === chat.id
+                              ? "text-white/70 hover:text-white hover:bg-white/10"
+                              : "text-gray-500 hover:text-red-500 hover:bg-red-50"
+                          )}
+                          aria-label="Delete chat"
+                        >
+                          <FiTrash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
               </button>

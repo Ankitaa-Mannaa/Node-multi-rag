@@ -63,8 +63,28 @@ const deleteChat = async (req, res, next) => {
   }
 };
 
+const updateChat = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body;
+    const result = await pool.query(
+      "UPDATE chats SET title = $1 WHERE id = $2 AND user_id = $3 RETURNING id, rag_type, title, created_at",
+      [title || null, id, req.user.id]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ message: "Chat not found" });
+    }
+
+    return res.json({ chat: result.rows[0] });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   createChat,
   listChats,
   deleteChat,
+  updateChat,
 };

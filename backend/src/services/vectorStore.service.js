@@ -39,7 +39,7 @@ function namespace(userId, ragType) {
  * @param {string} ragType - support | resume | expense | general
  * @param {number[]} embedding - query vector
  * @param {number} limit - max chunks to return
- * @returns {Promise<string[]>} chunk content strings
+ * @returns {Promise<Array<{ content: string, documentId?: string, fileName?: string, chunkIndex?: number }>>}
  */
 async function listRelevantChunks(userId, ragType, embedding, limit = 6) {
   const idx = await getPineconeIndex();
@@ -51,14 +51,37 @@ async function listRelevantChunks(userId, ragType, embedding, limit = 6) {
       includeMetadata: true,
     });
     const matches = res.matches || [];
-    return matches
+    const items = matches
       .filter((m) => m.metadata && m.metadata.content)
-      .map((m) => m.metadata.content);
+      .map((m) => ({
+        content: m.metadata.content,
+        documentId: m.metadata.document_id,
+        fileName: m.metadata.file_name,
+        chunkIndex: m.metadata.chunk_index,
+      }));
+
+    const missingFileNames = items
+      .filter((i) => i.documentId && !i.fileName)
+      .map((i) => i.documentId);
+    if (missingFileNames.length) {
+      const uniqueIds = [...new Set(missingFileNames)];
+      const docRes = await pool.query(
+        "SELECT id, file_name FROM documents WHERE id = ANY($1::uuid[])",
+        [uniqueIds]
+      );
+      const nameById = new Map(docRes.rows.map((r) => [r.id, r.file_name]));
+      items.forEach((i) => {
+        if (!i.fileName && i.documentId) {
+          i.fileName = nameById.get(i.documentId);
+        }
+      });
+    }
+    return items;
   }
 
   const res = await pool.query(
     `
-    SELECT c.content
+    SELECT c.content, c.chunk_index, d.id AS document_id, d.file_name
     FROM document_chunks c
     JOIN documents d ON d.id = c.document_id
     WHERE c.user_id = $1 AND c.rag_type = $2 AND d.status = 'ready'
@@ -67,7 +90,83 @@ async function listRelevantChunks(userId, ragType, embedding, limit = 6) {
     `,
     [userId, ragType, toPgVector(embedding), limit]
   );
-  return res.rows.map((row) => row.content);
+  return res.rows.map((row) => ({
+    content: row.content,
+    documentId: row.document_id,
+    fileName: row.file_name,
+    chunkIndex: row.chunk_index,
+  }));
+}
+
+/**
+ * Fetch relevant chunks with similarity scores (0..1).
+ * @param {string} userId - UUID
+ * @param {string} ragType - support | resume | expense | general
+ * @param {number[]} embedding - query vector
+ * @param {number} limit - max chunks to return
+ * @returns {Promise<Array<{ content: string, score: number, documentId?: string, fileName?: string, chunkIndex?: number }>>}
+ */
+async function listRelevantChunksWithScores(userId, ragType, embedding, limit = 6) {
+  const idx = await getPineconeIndex();
+  if (idx) {
+    const ns = namespace(userId, ragType);
+    const res = await idx.namespace(ns).query({
+      vector: embedding,
+      topK: limit,
+      includeMetadata: true,
+    });
+    const matches = res.matches || [];
+    const items = matches
+      .filter((m) => m.metadata && m.metadata.content)
+      .map((m) => ({
+        content: m.metadata.content,
+        score: typeof m.score === "number" ? m.score : 0,
+        documentId: m.metadata.document_id,
+        fileName: m.metadata.file_name,
+        chunkIndex: m.metadata.chunk_index,
+      }));
+
+    const missingFileNames = items
+      .filter((i) => i.documentId && !i.fileName)
+      .map((i) => i.documentId);
+    if (missingFileNames.length) {
+      const uniqueIds = [...new Set(missingFileNames)];
+      const docRes = await pool.query(
+        "SELECT id, file_name FROM documents WHERE id = ANY($1::uuid[])",
+        [uniqueIds]
+      );
+      const nameById = new Map(docRes.rows.map((r) => [r.id, r.file_name]));
+      items.forEach((i) => {
+        if (!i.fileName && i.documentId) {
+          i.fileName = nameById.get(i.documentId);
+        }
+      });
+    }
+    return items;
+  }
+
+  const res = await pool.query(
+    `
+    SELECT c.content,
+           c.chunk_index,
+           d.id AS document_id,
+           d.file_name,
+           1 / (1 + (c.embedding <-> $3)) AS score
+    FROM document_chunks c
+    JOIN documents d ON d.id = c.document_id
+    WHERE c.user_id = $1 AND c.rag_type = $2 AND d.status = 'ready'
+    ORDER BY c.embedding <-> $3
+    LIMIT $4
+    `,
+    [userId, ragType, toPgVector(embedding), limit]
+  );
+  return res.rows.map((row) => ({
+    content: row.content,
+    score: Number(row.score) || 0,
+    documentId: row.document_id,
+    fileName: row.file_name,
+    chunkIndex: row.chunk_index,
+  }));
 }
 
 /**
@@ -77,7 +176,7 @@ async function listRelevantChunks(userId, ragType, embedding, limit = 6) {
 async function listLatestDocumentChunks(userId, ragType, limit = 6) {
   const docRes = await pool.query(
     `
-    SELECT id
+    SELECT id, file_name
     FROM documents
     WHERE user_id = $1 AND rag_type = $2 AND status = 'ready'
     ORDER BY created_at DESC
@@ -90,7 +189,7 @@ async function listLatestDocumentChunks(userId, ragType, limit = 6) {
 
   const res = await pool.query(
     `
-    SELECT content
+    SELECT content, chunk_index
     FROM document_chunks
     WHERE document_id = $1
     ORDER BY chunk_index ASC
@@ -98,7 +197,12 @@ async function listLatestDocumentChunks(userId, ragType, limit = 6) {
     `,
     [doc.id, limit]
   );
-  return res.rows.map((row) => row.content);
+  return res.rows.map((row) => ({
+    content: row.content,
+    documentId: doc.id,
+    fileName: doc.file_name,
+    chunkIndex: row.chunk_index,
+  }));
 }
 
 /**
@@ -108,7 +212,7 @@ async function listLatestDocumentChunks(userId, ragType, limit = 6) {
  * @param {string} ragType - support | resume | expense | general
  * @param {Array<{ content: string, embedding: number[], chunkIndex: number }>} chunks
  */
-async function upsertChunks(documentId, userId, ragType, chunks) {
+async function upsertChunks(documentId, userId, ragType, chunks, fileName) {
   const idx = await getPineconeIndex();
   if (idx) {
     const ns = namespace(userId, ragType);
@@ -120,6 +224,7 @@ async function upsertChunks(documentId, userId, ragType, chunks) {
         user_id: userId,
         rag_type: ragType,
         chunk_index: c.chunkIndex,
+        file_name: fileName,
         content: c.content,
       },
     }));
@@ -176,6 +281,7 @@ function usePinecone() {
 
 module.exports = {
   listRelevantChunks,
+  listRelevantChunksWithScores,
   listLatestDocumentChunks,
   upsertChunks,
   deleteByDocument,

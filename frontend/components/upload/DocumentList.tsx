@@ -41,6 +41,11 @@ export const DocumentList: React.FC<DocumentListProps> = ({
     }
   };
 
+  const getStatusLabel = (status: Document["status"]) => {
+    if (status === "uploaded") return "attached";
+    return status;
+  };
+
   if (documents.length === 0) {
     return (
       <Card className="p-6">
@@ -56,21 +61,21 @@ export const DocumentList: React.FC<DocumentListProps> = ({
         {documents.map((doc) => (
           <div
             key={doc.id}
-            className="flex items-center justify-between p-3 bg-cream-50 rounded-lg border border-cream-300"
+            className="flex items-start justify-between gap-3 p-3 bg-cream-50 rounded-lg border border-cream-300"
           >
-            <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className="flex items-start gap-3 flex-1 min-w-0">
               {getStatusIcon(doc.status)}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 break-words">
+              <div className="flex-1 min-w-0 w-full">
+                <p className="text-sm font-medium text-gray-900 break-all whitespace-normal">
                   {doc.file_name}
                 </p>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={cn("text-xs", getStatusColor(doc.status))}>
-                    {doc.status}
+                    {getStatusLabel(doc.status)}
                   </span>
                   {doc.error_message && (
                     <span className="text-xs text-red-600 truncate">
-                      • {doc.error_message}
+                      - {doc.error_message}
                     </span>
                   )}
                 </div>
@@ -79,7 +84,8 @@ export const DocumentList: React.FC<DocumentListProps> = ({
             {onDelete && doc.status !== "processing" && (
               <button
                 onClick={() => onDelete(doc.id)}
-                className="p-2 text-gray-500 hover:text-red-400 transition-colors"
+                className="p-2 text-gray-500 hover:text-red-400 transition-colors shrink-0"
+                aria-label="Delete document"
               >
                 <FiTrash2 className="w-4 h-4" />
               </button>

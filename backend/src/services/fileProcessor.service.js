@@ -65,7 +65,13 @@ const extractCsvText = (filePath) => {
   return clampText(text);
 };
 
+const extractPlainText = (filePath) => {
+  const content = fs.readFileSync(filePath, "utf8");
+  return clampText(content);
+};
+
 module.exports = {
   extractPdfText,
   extractCsvText,
+  extractPlainText,
 };

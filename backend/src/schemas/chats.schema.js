@@ -21,8 +21,18 @@ const deleteChatSchema = z.object({
   }),
 });
 
+const updateChatSchema = z.object({
+  params: z.object({
+    id: z.string().uuid(),
+  }),
+  body: z.object({
+    title: z.string().min(1).max(120),
+  }),
+});
+
 module.exports = {
   createChatSchema,
   listChatsSchema,
   deleteChatSchema,
+  updateChatSchema,
 };

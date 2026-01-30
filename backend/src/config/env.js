@@ -16,11 +16,24 @@ module.exports = {
   openrouterBaseUrl:
     process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
   openrouterModel: process.env.OPENROUTER_MODEL || "google/gemini-2.0-flash",
+  openrouterModelResume:
+    process.env.OPENROUTER_MODEL_RESUME || process.env.OPENROUTER_MODEL,
+  openrouterModelSupport:
+    process.env.OPENROUTER_MODEL_SUPPORT || process.env.OPENROUTER_MODEL,
+  openrouterModelGeneral:
+    process.env.OPENROUTER_MODEL_GENERAL || process.env.OPENROUTER_MODEL,
+  openrouterModelExpense:
+    process.env.OPENROUTER_MODEL_EXPENSE || process.env.OPENROUTER_MODEL,
   openrouterEmbeddingModel:
     process.env.OPENROUTER_EMBEDDING_MODEL || "text-embedding-3-large",
+  openrouterMaxOutputTokens: Number(process.env.OPENROUTER_MAX_OUTPUT_TOKENS) || 2048,
   embeddingDim: Number(process.env.EMBEDDING_DIM) || 1024,
+  maxMessagesPerRag: Number(process.env.MAX_MESSAGES_PER_RAG) || 20,
   refreshTokenTtlDays: Number(process.env.REFRESH_TOKEN_TTL_DAYS) || 30,
   // Pinecone (optional; if set, used for vector store instead of pgvector)
   pineconeApiKey: process.env.PINECONE_API_KEY,
   pineconeIndex: process.env.PINECONE_INDEX || "multi-rag",
+  // Finance data providers (optional)
+  finnhubApiKey: process.env.FINNHUB_API_KEY,
+  finageApiKey: process.env.FINAGE_API_KEY,
 };

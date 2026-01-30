@@ -1,3 +1,4 @@
+const path = require("path");
 const pool = require("../config/db");
 const eventsService = require("../services/events.service");
 const webhookDispatcher = require("./webhook.dispatcher");
@@ -21,7 +22,7 @@ const processDocument = async ({ documentId, ragType }) => {
   try {
     const docRes = await pool.query(
       `
-      SELECT id, user_id, rag_type, file_path, file_type, file_size
+      SELECT id, user_id, rag_type, file_name, file_path, file_type, file_size
       FROM documents
       WHERE id = $1
       `,
@@ -47,7 +48,21 @@ const processDocument = async ({ documentId, ragType }) => {
 
     let text = "";
     if (ragType === "expense") {
-      text = fileProcessor.extractCsvText(doc.file_path);
+      const ext = path.extname(doc.file_path || "").toLowerCase();
+      const type = (doc.file_type || "").toLowerCase();
+      const isCsv = type === "text/csv" || type === "application/vnd.ms-excel" || ext === ".csv";
+      const isPdf = type === "application/pdf" || ext === ".pdf";
+      const isText = type === "text/plain" || ext === ".txt";
+
+      if (isCsv) {
+        text = fileProcessor.extractCsvText(doc.file_path);
+      } else if (isPdf) {
+        text = await fileProcessor.extractPdfText(doc.file_path);
+      } else if (isText) {
+        text = fileProcessor.extractPlainText(doc.file_path);
+      } else {
+        throw new Error("Unsupported expense document type");
+      }
     } else {
       text = await fileProcessor.extractPdfText(doc.file_path);
     }
@@ -84,7 +99,8 @@ const processDocument = async ({ documentId, ragType }) => {
       doc.id,
       doc.user_id,
       doc.rag_type,
-      chunksWithEmbeddings
+      chunksWithEmbeddings,
+      doc.file_name
     );
 
     await setStatus(documentId, "ready");

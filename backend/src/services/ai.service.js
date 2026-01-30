@@ -5,7 +5,12 @@ const {
   openrouterApiKey,
   openrouterBaseUrl,
   openrouterModel,
+  openrouterModelResume,
+  openrouterModelSupport,
+  openrouterModelGeneral,
+  openrouterModelExpense,
   openrouterEmbeddingModel,
+  openrouterMaxOutputTokens,
   embeddingDim,
 } = require("../config/env");
 
@@ -28,24 +33,169 @@ const getOpenRouter = () => {
   return openrouterClient;
 };
 
+const getModelForRag = (ragType) => {
+  switch (ragType) {
+    case "resume":
+      return openrouterModelResume || openrouterModel;
+    case "support":
+      return openrouterModelSupport || openrouterModel;
+    case "expense":
+      return openrouterModelExpense || openrouterModel;
+    case "general":
+      return openrouterModelGeneral || openrouterModel;
+    default:
+      return openrouterModel;
+  }
+};
+
 /**
  * Build the user-facing prompt: RAG-specific prefix + context + history + message.
  * Used so each RAG (support, resume, expense, general) gets the right instructions.
  */
-function buildUserPrompt({ ragType, message, history, contexts }) {
+function formatDocumentsList(documents) {
+  if (!Array.isArray(documents) || documents.length === 0) {
+    return "No uploaded documents were found for this RAG.";
+  }
+  return documents
+    .map((doc, idx) => {
+      const createdAt = doc.created_at
+        ? new Date(doc.created_at).toISOString()
+        : "unknown date";
+      return `${idx + 1}. ${doc.file_name || "Untitled"} (id: ${doc.id}, status: ${doc.status}, uploaded: ${createdAt})`;
+    })
+    .join("\n");
+}
+
+function formatResumeScore(resumeScore) {
+  if (!resumeScore) return "No ML score computed for this request.";
+  if (resumeScore.requires_score_choice) {
+    return "ML score not computed. Ask the user whether they want a generic resume quality score or a job-description match score.";
+  }
+  if (resumeScore.requires_job_description) {
+    return "ML score not computed. Job description is required for accurate scoring.";
+  }
+  const lines = [
+    `type: ${resumeScore.type || "job"}`,
+    `overall_score: ${resumeScore.score}/100`,
+    `similarity: ${resumeScore.similarity}`,
+    `note: ${resumeScore.note}`,
+  ];
+  if (Array.isArray(resumeScore.criteria) && resumeScore.criteria.length) {
+    lines.push("criteria:");
+    resumeScore.criteria.forEach((c) => {
+      lines.push(`  - ${c.label}: ${c.score}/100`);
+    });
+  }
+  if (Array.isArray(resumeScore.top_matches) && resumeScore.top_matches.length) {
+    lines.push("top_matches:");
+    resumeScore.top_matches.forEach((m, idx) => {
+      const label = m.file_name ? `${m.file_name}` : "resume";
+      lines.push(
+        `  ${idx + 1}. ${label} | chunk ${m.chunk_index ?? "?"} | score ${m.score}`
+      );
+    });
+  }
+  return lines.join("\n");
+}
+
+function formatFinanceData(financeData) {
+  if (!financeData) return null;
+  const lines = [];
+  if (Array.isArray(financeData.quotes) && financeData.quotes.length) {
+    lines.push("quotes:");
+    financeData.quotes.forEach((q) => {
+      const price = q.quote?.c ?? null;
+      const change = q.quote?.d ?? null;
+      const pct = q.quote?.dp ?? null;
+      lines.push(
+        `  - ${q.symbol}: price=${price ?? "n/a"}, change=${change ?? "n/a"}, change_pct=${pct ?? "n/a"}`
+      );
+    });
+  }
+  if (financeData.market_status) {
+    lines.push("market_status:");
+    lines.push(JSON.stringify(financeData.market_status));
+  }
+  if (Array.isArray(financeData.notes) && financeData.notes.length) {
+    lines.push("notes:");
+    financeData.notes.forEach((n) => lines.push(`  - ${n}`));
+  }
+  return lines.join("\n");
+}
+
+function formatContexts(contexts) {
+  if (!Array.isArray(contexts) || contexts.length === 0) {
+    return "No relevant document context was found for this query.";
+  }
+  if (typeof contexts[0] === "string") {
+    return contexts.join("\n\n---\n\n");
+  }
+
+  const grouped = new Map();
+  for (const ctx of contexts) {
+    const key = ctx.documentId || "unknown";
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(ctx);
+  }
+
+  const sections = [];
+  for (const [docId, items] of grouped.entries()) {
+    const label = items[0]?.fileName
+      ? `${items[0].fileName} (id: ${docId})`
+      : `Document ${docId}`;
+    sections.push(`### ${label}`);
+    items.forEach((item) => {
+      const prefix =
+        typeof item.chunkIndex === "number"
+          ? `- [chunk ${item.chunkIndex}] `
+          : "- ";
+      sections.push(`${prefix}${item.content}`);
+    });
+    sections.push("");
+  }
+  return sections.join("\n");
+}
+
+function buildUserPrompt({
+  ragType,
+  message,
+  history,
+  contexts,
+  documents,
+  resumeScore,
+  financeData,
+}) {
   const { userPrefix } = getPromptForRag(ragType);
-  const contextText =
-    contexts.length > 0
-      ? contexts.join("\n\n---\n\n")
-      : "No relevant document context was found for this query.";
+  const contextText = formatContexts(contexts);
   const historyText =
     history.length > 0
       ? history.map((m) => `${m.role}: ${m.content}`).join("\n")
       : "No previous messages in this chat.";
+  const documentsText = formatDocumentsList(documents);
+  const resumeScoreText = ragType === "resume" ? formatResumeScore(resumeScore) : null;
+  const financeText = ragType === "expense" ? formatFinanceData(financeData) : null;
 
-  return [
+  const parts = [
     userPrefix,
     "",
+    "## Uploaded documents",
+    documentsText,
+    "",
+  ];
+
+  if (resumeScoreText) {
+    parts.push("## ML resume score (if available)");
+    parts.push(resumeScoreText);
+    parts.push("");
+  }
+
+  if (financeText) {
+    parts.push("## Live market data (if available)");
+    parts.push(financeText);
+    parts.push("");
+  }
+
+  parts.push(
     "## Context (from uploaded documents)",
     contextText,
     "",
@@ -53,8 +203,10 @@ function buildUserPrompt({ ragType, message, history, contexts }) {
     historyText,
     "",
     "## User message",
-    message,
-  ].join("\n");
+    message
+  );
+
+  return parts.join("\n");
 }
 
 /**
@@ -66,18 +218,31 @@ function buildUserPrompt({ ragType, message, history, contexts }) {
  * @param {string[]} opts.contexts - retrieved chunk contents
  * @returns {Promise<string>} AI response text
  */
-const generateResponse = async ({ ragType, message, history = [], contexts = [] }) => {
+const generateResponse = async ({
+  ragType,
+  message,
+  history = [],
+  contexts = [],
+  documents = [],
+  resumeScore = null,
+  financeData = null,
+}) => {
   const { system } = getPromptForRag(ragType);
+  const model = getModelForRag(ragType);
   const userContent = buildUserPrompt({
     ragType,
     message,
     history,
     contexts,
+    documents,
+    resumeScore,
+    financeData,
   });
 
   const client = getOpenRouter();
   const res = await client.responses.create({
-    model: openrouterModel,
+    model,
+    max_output_tokens: openrouterMaxOutputTokens,
     input: [
       { role: "system", content: system },
       { role: "user", content: userContent },
@@ -92,9 +257,11 @@ const generateResponse = async ({ ragType, message, history = [], contexts = [] 
  */
 const generateResponseFromPrompt = async ({ prompt, ragType }) => {
   const { system } = getPromptForRag(ragType || "general");
+  const model = getModelForRag(ragType || "general");
   const client = getOpenRouter();
   const res = await client.responses.create({
-    model: openrouterModel,
+    model,
+    max_output_tokens: openrouterMaxOutputTokens,
     input: [
       { role: "system", content: system },
       { role: "user", content: prompt },

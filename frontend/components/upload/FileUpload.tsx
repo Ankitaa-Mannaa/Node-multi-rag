@@ -11,21 +11,39 @@ interface FileUploadProps {
   ragType: RAGType;
   onUploadSuccess?: (document: Document) => void;
   acceptedTypes?: string[];
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
 export const FileUpload: React.FC<FileUploadProps> = ({
   ragType,
   onUploadSuccess,
   acceptedTypes = ["application/pdf", "text/csv"],
+  disabled = false,
+  disabledMessage,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const formatAcceptedTypes = (types: string[]) => {
+    if (!types || types.length === 0) return "Any";
+    const labels = types.map((type) => {
+      if (type === "application/pdf") return "PDF";
+      if (type === "text/csv" || type === "application/vnd.ms-excel") return "CSV";
+      if (type === "text/plain") return "TXT";
+      return type;
+    });
+    return Array.from(new Set(labels)).join(", ");
+  };
+
+  const acceptedLabel = formatAcceptedTypes(acceptedTypes);
+
   const handleFile = async (file: File) => {
-    if (!acceptedTypes.includes(file.type)) {
-      setError(`Invalid file type. Accepted: ${acceptedTypes.join(", ")}`);
+    if (disabled) return;
+    if (acceptedTypes.length > 0 && !acceptedTypes.includes(file.type)) {
+      setError(`Invalid file type. Accepted: ${acceptedLabel}`);
       return;
     }
 
@@ -45,6 +63,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (disabled) return;
 
     const file = e.dataTransfer.files[0];
     if (file) {
@@ -53,6 +72,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
   };
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (disabled) return;
     const file = e.target.files?.[0];
     if (file) {
       handleFile(file);
@@ -65,14 +85,15 @@ export const FileUpload: React.FC<FileUploadProps> = ({
         onDrop={handleDrop}
         onDragOver={(e) => {
           e.preventDefault();
-          setIsDragging(true);
+          if (!disabled) setIsDragging(true);
         }}
         onDragLeave={() => setIsDragging(false)}
         className={cn(
           "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
           isDragging
             ? "border-black bg-cream-200"
-            : "border-cream-300 hover:border-gray-600 bg-cream-50"
+            : "border-cream-300 hover:border-gray-600 bg-cream-50",
+          disabled && "opacity-60 cursor-not-allowed"
         )}
       >
         <input
@@ -81,7 +102,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({
           accept={acceptedTypes.join(",")}
           onChange={handleFileInput}
           className="hidden"
-          disabled={isUploading}
+          disabled={isUploading || disabled}
         />
 
         {isUploading ? (
@@ -96,14 +117,23 @@ export const FileUpload: React.FC<FileUploadProps> = ({
               Drag and drop a file here, or{" "}
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="text-black hover:text-gray-700 underline"
+                className={cn(
+                  "text-black hover:text-gray-700 underline",
+                  disabled && "pointer-events-none text-gray-500 no-underline"
+                )}
+                disabled={disabled}
               >
                 browse
               </button>
             </p>
             <p className="text-sm text-gray-600">
-              Accepted: PDF, CSV (Max 10MB)
+              Accepts: {acceptedLabel} (Max 10MB)
             </p>
+            {disabled && (
+              <p className="mt-2 text-xs text-red-600">
+                {disabledMessage || "Uploads are disabled right now."}
+              </p>
+            )}
           </>
         )}
 

@@ -112,6 +112,12 @@ export const chatsApi = {
     const response = await api.get<{ chats: Chat[] }>(`/chats?${params.toString()}`);
     return response.data;
   },
+  update: async (chatId: string, title: string): Promise<{ chat: Chat }> => {
+    const response = await api.patch<{ chat: Chat }>(`/chats/${chatId}`, {
+      title,
+    });
+    return response.data;
+  },
   delete: async (chatId: string): Promise<void> => {
     await api.delete(`/chats/${chatId}`);
   },

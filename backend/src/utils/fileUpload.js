@@ -6,13 +6,18 @@ const { ensureDirSync } = require("./ensureDir");
 const ALLOWED_BY_RAG = {
   support: ["application/pdf"],
   resume: ["application/pdf"],
-  expense: ["text/csv", "application/vnd.ms-excel"],
+  expense: [
+    "text/csv",
+    "application/vnd.ms-excel",
+    "application/pdf",
+    "text/plain",
+  ],
 };
 
 const EXTENSIONS_BY_RAG = {
   support: [".pdf"],
   resume: [".pdf"],
-  expense: [".csv"],
+  expense: [".csv", ".pdf", ".txt"],
 };
 
 const createUpload = () => {
