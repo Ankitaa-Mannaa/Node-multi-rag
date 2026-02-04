@@ -1,6 +1,5 @@
 const path = require("path");
 const pool = require("../config/db");
-const eventsService = require("../services/events.service");
 const webhookDispatcher = require("./webhook.dispatcher");
 const webhookDelivery = require("./webhook.delivery");
 const fileProcessor = require("../services/fileProcessor.service");
@@ -141,26 +140,14 @@ const processDocument = async ({ documentId, ragType }) => {
 
 const processSupportDoc = async ({ documentId }) => {
   await processDocument({ documentId, ragType: "support" });
-  await eventsService.publishEvent({
-    type: "document_processed",
-    payload: { document_id: documentId, rag_type: "support" },
-  });
 };
 
 const processResume = async ({ documentId }) => {
   await processDocument({ documentId, ragType: "resume" });
-  await eventsService.publishEvent({
-    type: "resume_analysis_completed",
-    payload: { document_id: documentId, rag_type: "resume" },
-  });
 };
 
 const processExpenseCsv = async ({ documentId }) => {
   await processDocument({ documentId, ragType: "expense" });
-  await eventsService.publishEvent({
-    type: "monthly_expense_summary_ready",
-    payload: { document_id: documentId, rag_type: "expense" },
-  });
 };
 
 module.exports = {
